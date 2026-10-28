@@ -1,1 +1,142 @@
 
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PERSON CRM</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f9;color:#1b2b40;font-family:system-ui,-apple-system,sans-serif}
+header{background:#152e4c;color:white;padding:22px 16px}
+header h1{font-size:23px;margin:0}header p{font-size:12px;opacity:.8}
+main{max-width:650px;margin:auto;padding:16px}
+button{border:0;border-radius:9px;padding:11px 14px;background:#2462cf;color:white;font-weight:700;cursor:pointer}
+button.sub{background:#e4eaf2;color:#24374e}
+button.active{background:#163f91}
+nav,.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.card{background:white;border-radius:13px;padding:16px;margin:12px 0;border:1px solid #dde4ed}
+label{display:block;font-size:13px;font-weight:700;margin:11px 0 4px}
+input,textarea,select{width:100%;border:1px solid #cbd5e1;border-radius:8px;background:white;padding:11px;font:inherit}
+textarea{min-height:72px;resize:vertical}h2{font-size:19px}h3{margin:0 0 8px}
+small{color:#607187}p{white-space:pre-wrap;overflow-wrap:anywhere}
+.hidden{display:none}.field{border-top:1px solid #edf0f5;padding:10px 0}
+.field b{font-size:12px;color:#526379}.field p{margin:5px 0}
+</style>
+</head>
+<body>
+<header><h1>PERSON CRM</h1><p>営業・接客を1つで管理する個人用アプリ</p></header>
+<main>
+<nav>
+<button id="salesBtn" type="button">営業管理</button>
+<button id="serviceBtn" type="button">接客管理</button>
+</nav>
+<section id="listScreen">
+<div class="actions">
+<button id="newBtn" type="button">＋ 新規登録</button>
+<button id="backupBtn" class="sub" type="button">バックアップ</button>
+</div>
+<input id="search" placeholder="氏名・会社・関心・課題・タグで検索">
+<div id="list"></div>
+</section>
+<section id="formScreen" class="card hidden">
+<h2 id="formTitle">人物登録</h2>
+<form id="personForm">
+<label>名前（必須）</label><input name="name" required>
+<label>会社名・職業</label><input name="job">
+<label>関心・興味</label><textarea name="interest"></textarea>
+<label>ニーズ・求めていること</label><textarea name="needs"></textarea>
+<label>課題・困っていること</label><textarea name="issues"></textarea>
+<label>強み・得意分野</label><textarea name="strengths"></textarea>
+<label>好きなもの・好み</label><textarea name="likes"></textarea>
+<label>苦手なこと・NG</label><textarea name="dislikes"></textarea>
+<label>居住エリア（市区町村や最寄駅など）</label><input name="area">
+<label>タグ（カンマ区切り）</label><input name="tags" placeholder="紹介, 見込み, 常連">
+<label>次回連絡・来店予定</label><input name="next" type="date">
+<div class="actions"><button type="submit">保存する</button><button id="cancelBtn" class="sub" type="button">戻る</button></div>
+</form>
+</section>
+<section id="detailScreen" class="hidden"></section>
+</main>
+<script>
+(function(){
+'use strict';
+const KEY='person_crm_records_v1';
+const $=id=>document.getElementById(id);
+const escapeHtml=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dateNow=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+let records=[],mode='sales',editing=null,search='';
+try{let stored=JSON.parse(localStorage.getItem(KEY)||'[]');if(Array.isArray(stored))records=stored}catch(e){alert('以前のデータを読み込めませんでした。')}
+function persist(next){
+ try{localStorage.setItem(KEY,JSON.stringify(next));records=next;return true}
+ catch(e){alert('保存できませんでした。ブラウザの保存設定・容量をご確認ください。');return false}
+}
+function screen(name){['listScreen','formScreen','detailScreen'].forEach(id=>$(id).classList.toggle('hidden',id!==name))}
+function modeChange(value){mode=value;editing=null;screen('listScreen');render()}
+$('salesBtn').onclick=()=>modeChange('sales');
+$('serviceBtn').onclick=()=>modeChange('service');
+function render(){
+ $('salesBtn').classList.toggle('active',mode==='sales');
+ $('serviceBtn').classList.toggle('active',mode==='service');
+ const filtered=records.filter(p=>p.mode===mode && ['name','job','interest','issues','needs','strengths','likes','dislikes','tags','area'].some(k=>String(p[k]||'').toLowerCase().includes(search.toLowerCase())));
+ $('list').innerHTML=filtered.length?filtered.map(p=>{
+ const n=Array.isArray(p.logs)?p.logs.length:0;
+ return `<article class="card"><h3>${escapeHtml(p.name)}</h3><small>${escapeHtml(p.job||'職業未登録')}</small><p><b>関心：</b>${escapeHtml(p.interest||'未登録')}</p><p><b>課題：</b>${escapeHtml(p.issues||'未登録')}</p><small>${mode==='sales'?'接触':'来店'}履歴：${n}回　次回：${escapeHtml(p.next||'未設定')}</small><div style="margin-top:10px"><button data-detail="${escapeHtml(p.id)}">詳細を見る</button></div></article>`
+ }).join(''):'<p>該当する人物はいません。「＋ 新規登録」から追加できます。</p>';
+}
+$('search').oninput=e=>{search=e.target.value;render()};
+$('newBtn').onclick=()=>openForm();
+function openForm(id=null){
+ editing=id;
+ const p=records.find(x=>x.id===id)||{};
+ $('personForm').reset();
+ Array.from($('personForm').elements).forEach(el=>{if(el.name)el.value=p[el.name]||''});
+ $('formTitle').textContent=id?'人物を編集':'人物を登録';
+ screen('formScreen');
+}
+$('cancelBtn').onclick=()=>{screen('listScreen');render()};
+$('personForm').onsubmit=e=>{
+ e.preventDefault();
+ const values=Object.fromEntries(new FormData(e.target).entries());
+ values.name=String(values.name||'').trim();
+ if(!values.name){alert('名前を入力してください');return}
+ let next=records.map(p=>({...p}));
+ if(editing){const i=next.findIndex(p=>p.id===editing);if(i<0)return alert('人物が見つかりません');next[i]={...next[i],...values}}
+ else next.unshift({...values,id:'id_'+Date.now()+'_'+Math.random().toString(36).slice(2),mode,logs:[]});
+ if(persist(next)){editing=null;screen('listScreen');render();alert('保存しました')}
+};
+$('list').onclick=e=>{const b=e.target.closest('[data-detail]');if(b)showDetail(b.dataset.detail)};
+const fields=[['会社・職業','job'],['関心・興味','interest'],['ニーズ','needs'],['課題','issues'],['強み','strengths'],['好み','likes'],['苦手・NG','dislikes'],['居住エリア','area'],['タグ','tags'],['次回予定','next']];
+function showDetail(id){
+ const p=records.find(x=>x.id===id);if(!p)return;
+ const logs=Array.isArray(p.logs)?p.logs:[];
+ $('detailScreen').innerHTML=`<article class="card"><h2>${escapeHtml(p.name)}</h2>${fields.map(([title,key])=>`<div class="field"><b>${title}</b><p>${escapeHtml(p[key]||'未登録')}</p></div>`).join('')}<h3>${mode==='sales'?'営業':'来店'}履歴：${logs.length}回</h3>${logs.map(l=>`<div class="field"><small>${escapeHtml(l.date)}</small><p>${escapeHtml(l.note)}</p></div>`).join('')}<div class="actions"><button data-edit="${escapeHtml(id)}">編集</button><button data-log="${escapeHtml(id)}">履歴追加</button><button data-delete="${escapeHtml(id)}" class="sub">削除</button><button id="backBtn" class="sub">一覧へ</button></div></article>`;
+ screen('detailScreen');
+ $('backBtn').onclick=()=>{screen('listScreen');render()};
+}
+$('detailScreen').onclick=e=>{
+ const edit=e.target.closest('[data-edit]');if(edit){openForm(edit.dataset.edit);return}
+ const log=e.target.closest('[data-log]');if(log){
+ const id=log.dataset.log;const note=prompt('会話・商談・来店内容を入力してください');
+ if(!note||!note.trim())return;
+ const next=records.map(p=>p.id===id?{...p,logs:[...(Array.isArray(p.logs)?p.logs:[]),{date:dateNow(),note:note.trim()}]}:p);
+ if(persist(next))showDetail(id);return
+ }
+ const del=e.target.closest('[data-delete]');if(del&&confirm('この人物と履歴を削除しますか？')){
+ if(persist(records.filter(p=>p.id!==del.dataset.delete))){screen('listScreen');render()}
+ }
+};
+$('backupBtn').onclick=()=>{
+ try{
+ const blob=new Blob([JSON.stringify(records,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download='person_crm_backup_'+dateNow()+'.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1500);
+ }catch(e){alert('バックアップを作成できませんでした')}
+};
+render();
+})();
+</script>
+</body>
+</html>
+
